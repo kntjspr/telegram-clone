@@ -1,5 +1,5 @@
 [project]
-name = "rogue-helix"
+name = "telegram-clone"
 version = "0.1.0"
 description = "telegram channel cloner"
 readme = "README.md"

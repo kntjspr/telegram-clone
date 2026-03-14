@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>rogue-helix</title>
+    <title>telegram-clone</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -424,6 +424,23 @@
             color: var(--red);
         }
 
+        /* footer */
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            font-size: 0.8rem;
+        }
+
+        .footer a {
+            color: var(--text-dim);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .footer a:hover {
+            color: var(--text);
+        }
+
         /* responsive */
         @media (max-width: 500px) {
             .stats-grid {
@@ -440,7 +457,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>rogue-helix</h1>
+            <h1>telegram-clone</h1>
             <div class="status-badge">
                 <div class="status-dot" id="statusDot"></div>
                 <span id="statusText">connecting...</span>
@@ -537,6 +554,10 @@
                 <span>total cloned: <strong id="trackerTotal">—</strong></span>
                 <span>last run: <strong id="trackerLastRun">—</strong></span>
             </div>
+        </div>
+
+        <div class="footer">
+            <a href="https://github.com/kntjspr/telegram-clone" target="_blank">github.com/kntjspr/telegram-clone</a>
         </div>
     </div>
 

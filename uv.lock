@@ -1031,7 +1031,7 @@ wheels = [
 ]
 
 [[package]]
-name = "rogue-helix"
+name = "telegram-clone"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

@@ -1,3 +1,5 @@
+![screenshot](assets/screenshot.png)
+
 telegram channel cloner built on telethon. logs into your account, mirrors messages and files from a source channel to a destination channel. tracks what's been cloned so re-runs skip duplicates. deletes downloaded files after upload.
 
 ## setup
@@ -51,3 +53,4 @@ a `clone_tracker.json` file records every message ID that's been transferred. if
 | `PHONE` | phone number with country code |
 | `SOURCE_CHANNEL` | source channel username or id |
 | `DEST_CHANNEL` | destination channel username or id |
+
