@@ -1,7 +1,9 @@
 """
-json-backed tracker that remembers which messages have been cloned
-so we never re-upload the same thing twice.
-keys by channel_id:message_id so different channels don't collide.
+tracker factory — picks the right backend based on TRACKER_BACKEND env var.
+all backends share the same interface:
+  - is_cloned(channel_id, message_id) -> bool
+  - mark_cloned(channel_id, message_id, filename, media_type)
+  - get_stats() -> dict
 """
 
 import json
@@ -9,10 +11,12 @@ import os
 import tempfile
 from datetime import datetime, timezone
 
-from config import TRACKER_FILE
+from config import TRACKER_BACKEND, TRACKER_FILE
 
 
 class CloneTracker:
+    """json-backed tracker (default). kept here for backwards compat."""
+
     def __init__(self, path: str = TRACKER_FILE):
         self.path = path
         self.data: dict = self._load()
@@ -20,8 +24,11 @@ class CloneTracker:
     def _load(self) -> dict:
         if os.path.exists(self.path):
             with open(self.path, "r") as f:
-                return json.load(f)
-        return {"cloned_messages": {}, "stats": {"total_cloned": 0, "last_run": None}}
+                data = json.load(f)
+                if "failed_messages" not in data:
+                    data["failed_messages"] = {}
+                return data
+        return {"cloned_messages": {}, "failed_messages": {}, "stats": {"total_cloned": 0, "last_run": None}}
 
     def _save(self):
         """atomic write so a crash mid-save doesn't nuke the tracker"""
@@ -51,8 +58,23 @@ class CloneTracker:
             "media_type": media_type,
             "cloned_at": datetime.now(timezone.utc).isoformat(),
         }
+        
+        # if it succeeds later, remove it from failed list just in case
+        failed_key = self._key(channel_id, message_id)
+        if failed_key in self.data.get("failed_messages", {}):
+            del self.data["failed_messages"][failed_key]
+            
         self.data["stats"]["total_cloned"] = len(self.data["cloned_messages"])
         self.data["stats"]["last_run"] = datetime.now(timezone.utc).isoformat()
+        self._save()
+
+    def mark_failed(self, channel_id: int | str, message_id: int, reason: str):
+        self.data["failed_messages"][self._key(channel_id, message_id)] = {
+            "channel_id": str(channel_id),
+            "message_id": message_id,
+            "reason": reason,
+            "failed_at": datetime.now(timezone.utc).isoformat(),
+        }
         self._save()
 
     def get_stats(self) -> dict:
@@ -60,3 +82,18 @@ class CloneTracker:
             "total_cloned": len(self.data["cloned_messages"]),
             "last_run": self.data["stats"].get("last_run"),
         }
+
+
+def create_tracker():
+    """factory — returns the right tracker based on TRACKER_BACKEND config."""
+    backend = TRACKER_BACKEND.lower()
+
+    if backend == "sqlite":
+        from tracker_sqlite import SqliteTracker
+        return SqliteTracker()
+
+    if backend == "supabase":
+        from tracker_supabase import SupabaseTracker
+        return SupabaseTracker()
+
+    return CloneTracker()

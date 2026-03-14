@@ -17,6 +17,14 @@ SESSION_FILE = str(BASE_DIR / "rogue_helix")
 TRACKER_FILE = str(BASE_DIR / "clone_tracker.json")
 DOWNLOAD_DIR = str(BASE_DIR / "downloads")
 
+# tracker backend: "json" (default), "sqlite", or "supabase"
+TRACKER_BACKEND = os.getenv("TRACKER_BACKEND", "json")
+SQLITE_DB = os.getenv("SQLITE_DB", str(BASE_DIR / "clone_tracker.db"))
+
+# supabase (only needed if TRACKER_BACKEND=supabase)
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+
 WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0")
 WEB_PORT = int(os.getenv("WEB_PORT", "5000"))
 

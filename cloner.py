@@ -7,6 +7,7 @@ uses FastTelethon for parallel downloads/uploads on big files.
 import asyncio
 import os
 import logging
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -126,13 +127,13 @@ async def clone_channel(
                 progress_callback(stats.copy())
             continue
 
-        success = await _try_clone_with_retry(
+        success, error_reason = await _try_clone_with_retry(
             client, message, dest_entity, tracker, source_id,
             stats, progress_callback, max_retries, retry_delay,
         )
 
         if not success:
-            failed_queue.append(message)
+            failed_queue.append((message, error_reason))
             stats["failed_ids"].append(msg_id)
 
         stats["file_progress"] = None
@@ -200,7 +201,7 @@ async def _try_clone_with_retry(
                 f"[{stats['processed']}/{stats['total']}] "
                 f"msg #{msg_id} cloned"
             )
-            return True
+            return True, ""
         except Exception as e:
             if attempt < max_retries:
                 wait = retry_delay * (2 ** (attempt - 1))
@@ -211,10 +212,11 @@ async def _try_clone_with_retry(
                 await asyncio.sleep(wait)
             else:
                 stats["failed"] += 1
-                log.error(f"msg #{msg_id} permanently failed after {max_retries} attempts: {e}")
-                return False
+                error_reason = str(e)
+                log.error(f"msg #{msg_id} permanently failed after {max_retries} attempts: {error_reason}")
+                return False, error_reason
 
-    return False
+    return False, "Max retries exceeded"
 
 
 async def _clone_message(
@@ -267,7 +269,12 @@ async def _download_and_reupload(
                 break
 
     def _make_progress_cb(phase: str, fname: str):
+        start_time = time.time()
+        
         def cb(current, total):
+            elapsed = time.time() - start_time
+            speed = current / elapsed if elapsed > 0 else 0
+
             stats["file_progress"] = {
                 "phase": phase,
                 "filename": fname,
@@ -275,6 +282,7 @@ async def _download_and_reupload(
                 "total": total,
                 "current_human": _human_size(current),
                 "total_human": _human_size(total),
+                "speed_human": _human_size(speed) + "/s",
             }
             if progress_callback:
                 progress_callback(stats.copy())

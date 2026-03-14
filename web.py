@@ -19,7 +19,7 @@ from config import (
     API_ID, API_HASH, PHONE, SESSION_FILE, WEB_HOST, WEB_PORT,
     NOTIFY_ON_ERROR, NOTIFY_ON_COMPLETE,
 )
-from tracker import CloneTracker
+from tracker import create_tracker
 from cloner import clone_channel
 
 logging.basicConfig(
@@ -107,7 +107,7 @@ def api_status():
         logged_in = False
         user_info = None
 
-    tracker = CloneTracker()
+    tracker = create_tracker()
     return jsonify({
         "logged_in": logged_in,
         "user": user_info,
@@ -161,7 +161,7 @@ def api_clone_start():
 
     def _run_clone():
         try:
-            tracker = CloneTracker()
+            tracker = create_tracker()
 
             try:
                 source_id = int(source)

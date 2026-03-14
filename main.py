@@ -4,13 +4,14 @@ entrypoint — handles telegram login, channel selection, and kicks off the clon
 
 import asyncio
 import logging
+import signal
 import sys
 
 from telethon import TelegramClient
 from telethon.tl.types import Channel
 
 from config import API_ID, API_HASH, PHONE, SOURCE_CHANNEL, DEST_CHANNEL, SESSION_FILE
-from tracker import CloneTracker
+from tracker import create_tracker
 from cloner import clone_channel
 
 logging.basicConfig(
@@ -89,7 +90,7 @@ async def run():
         log.error("source and dest are the same channel, that's a loop my guy")
         sys.exit(1)
 
-    tracker = CloneTracker()
+    tracker = create_tracker()
     existing = tracker.get_stats()
     if existing["total_cloned"] > 0:
         log.info(f"resuming — {existing['total_cloned']} messages already cloned (last run: {existing['last_run']})")
@@ -97,16 +98,28 @@ async def run():
     print(f"\nstarting clone...")
     print(f"{'—' * 40}")
 
-    stats = await clone_channel(client, source, dest, tracker)
+    stop_event = asyncio.Event()
 
-    print(f"\n{'—' * 40}")
-    print(f"done.")
-    print(f"  cloned:  {stats['cloned']}")
-    print(f"  skipped: {stats['skipped']} (already cloned)")
-    print(f"  failed:  {stats['failed']}")
-    print(f"  total:   {stats['total']}")
+    def _sigint_handler():
+        print(f"\n[!] SIGINT received, stopping current clone gracefully... (press again to force quit)")
+        stop_event.set()
+        
+        # force quit on second press
+        client.loop.remove_signal_handler(signal.SIGINT)
 
-    await client.disconnect()
+    client.loop.add_signal_handler(signal.SIGINT, _sigint_handler)
+
+    try:
+        stats = await clone_channel(client, source, dest, tracker, stop_event=stop_event)
+    finally:
+        print(f"\n{'—' * 40}")
+        print(f"done.")
+        print(f"  cloned:  {stats['cloned']}")
+        print(f"  skipped: {stats['skipped']} (already cloned)")
+        print(f"  failed:  {stats['failed']}")
+        print(f"  total:   {stats['total']}")
+
+        await client.disconnect()
 
 
 def main():

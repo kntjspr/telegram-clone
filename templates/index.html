@@ -491,7 +491,10 @@
             <div class="file-progress" id="fileProgress">
                 <div class="file-progress-header">
                     <span class="file-progress-phase" id="filePhase">downloading</span>
-                    <span class="file-progress-size" id="fileSize">0 B / 0 B</span>
+                    <span class="file-progress-size">
+                        <span id="fileSpeed" style="margin-right: 8px; color: var(--accent);">0 B/s</span>
+                        <span id="fileSize">0 B / 0 B</span>
+                    </span>
                 </div>
                 <div class="file-progress-name" id="fileName">—</div>
                 <div class="file-bar-outer">
@@ -791,6 +794,7 @@
                 $('filePhase').className = 'file-progress-phase ' + fp.phase;
                 $('fileName').textContent = fp.filename || '—';
                 $('fileSize').textContent = `${fp.current_human} / ${fp.total_human}`;
+                $('fileSpeed').textContent = fp.speed_human || '—';
                 const filePct = Math.round((fp.current / fp.total) * 100);
                 $('fileBar').style.width = filePct + '%';
                 $('fileBar').className = 'file-bar-inner ' + fp.phase;
