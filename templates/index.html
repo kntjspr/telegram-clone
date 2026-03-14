@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>rogue-helix</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #0a0a0f;
+            --surface: #12121a;
+            --surface-2: #1a1a26;
+            --border: #2a2a3a;
+            --text: #e4e4ec;
+            --text-dim: #8888a0;
+            --accent: #7c5cfc;
+            --accent-glow: rgba(124, 92, 252, 0.25);
+            --green: #34d399;
+            --red: #f87171;
+            --amber: #fbbf24;
+            --radius: 12px;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        /* header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent), #a78bfa);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.02em;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 100px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            background: var(--surface);
+            border: 1px solid var(--border);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--red);
+        }
+
+        .status-dot.online {
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green);
+        }
+
+        /* cards */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .card-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+        }
+
+        /* channel selector */
+        .select-group {
+            margin-bottom: 16px;
+        }
+
+        .select-group label {
+            display: block;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-dim);
+            margin-bottom: 6px;
+        }
+
+        .select-group select {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 0.9rem;
+            cursor: pointer;
+            outline: none;
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238888a0' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            transition: border-color 0.2s;
+        }
+
+        .select-group select:focus {
+            border-color: var(--accent);
+        }
+
+        .select-group select:hover {
+            border-color: var(--accent);
+        }
+
+        /* buttons */
+        .btn-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            outline: none;
+        }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+            box-shadow: 0 0 20px var(--accent-glow);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #6b4ce0;
+            box-shadow: 0 0 30px var(--accent-glow);
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background: rgba(248, 113, 113, 0.15);
+            color: var(--red);
+            border: 1px solid rgba(248, 113, 113, 0.3);
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: rgba(248, 113, 113, 0.25);
+        }
+
+        /* progress */
+        .progress-wrap {
+            margin-bottom: 20px;
+        }
+
+        .progress-bar-outer {
+            width: 100%;
+            height: 6px;
+            background: var(--surface-2);
+            border-radius: 100px;
+            overflow: hidden;
+            margin-bottom: 12px;
+        }
+
+        .progress-bar-inner {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent), #a78bfa);
+            border-radius: 100px;
+            width: 0%;
+            transition: width 0.4s ease;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+
+        .stat-box {
+            text-align: center;
+            padding: 14px 8px;
+            background: var(--surface-2);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .stat-label {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-top: 2px;
+        }
+
+        .stat-value.green {
+            color: var(--green);
+        }
+
+        .stat-value.amber {
+            color: var(--amber);
+        }
+
+        .stat-value.red {
+            color: var(--red);
+        }
+
+        /* job status */
+        .job-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 16px;
+            background: var(--surface-2);
+            border-radius: 8px;
+            font-size: 0.85rem;
+            margin-bottom: 16px;
+            border: 1px solid var(--border);
+        }
+
+        .job-status .pulse {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--accent);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+                box-shadow: 0 0 0 0 var(--accent-glow);
+            }
+
+            50% {
+                opacity: 0.7;
+                box-shadow: 0 0 0 8px transparent;
+            }
+        }
+
+        .job-status.idle .pulse {
+            background: var(--text-dim);
+            animation: none;
+        }
+
+        .job-status.done .pulse {
+            background: var(--green);
+            animation: none;
+        }
+
+        .job-status.error .pulse {
+            background: var(--red);
+            animation: none;
+        }
+
+        /* file transfer progress */
+        .file-progress {
+            display: none;
+            margin-bottom: 16px;
+            padding: 14px 16px;
+            background: var(--surface-2);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .file-progress.active {
+            display: block;
+        }
+
+        .file-progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .file-progress-phase {
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .file-progress-phase.downloading {
+            color: var(--amber);
+        }
+
+        .file-progress-phase.uploading {
+            color: var(--accent);
+        }
+
+        .file-progress-size {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .file-progress-name {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+        }
+
+        .file-bar-outer {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 100px;
+            overflow: hidden;
+        }
+
+        .file-bar-inner {
+            height: 100%;
+            border-radius: 100px;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .file-bar-inner.downloading {
+            background: linear-gradient(90deg, var(--amber), #f59e0b);
+        }
+
+        .file-bar-inner.uploading {
+            background: linear-gradient(90deg, var(--accent), #a78bfa);
+        }
+
+        .progress-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+        }
+
+        /* tracker info */
+        .tracker-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            padding-top: 12px;
+            border-top: 1px solid var(--border);
+        }
+
+        /* log feed */
+        .log-feed {
+            max-height: 180px;
+            overflow-y: auto;
+            font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            line-height: 1.8;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) transparent;
+        }
+
+        .log-feed .entry {
+            padding: 2px 0;
+            border-bottom: 1px solid rgba(42, 42, 58, 0.5);
+        }
+
+        .log-feed .msg-id {
+            color: var(--accent);
+        }
+
+        .log-feed .success {
+            color: var(--green);
+        }
+
+        .log-feed .fail {
+            color: var(--red);
+        }
+
+        /* responsive */
+        @media (max-width: 500px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .container {
+                padding: 20px 14px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>rogue-helix</h1>
+            <div class="status-badge">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">connecting...</span>
+            </div>
+        </div>
+
+        <!-- channel selector -->
+        <div class="card" id="configCard">
+            <div class="card-title">channels</div>
+            <div class="select-group">
+                <label for="sourceSelect">source — clone from</label>
+                <select id="sourceSelect">
+                    <option value="">loading channels...</option>
+                </select>
+            </div>
+            <div class="select-group">
+                <label for="destSelect">destination — clone to</label>
+                <select id="destSelect">
+                    <option value="">loading channels...</option>
+                </select>
+            </div>
+            <div class="btn-row">
+                <button class="btn btn-primary" id="startBtn" disabled onclick="startClone()">start clone</button>
+                <button class="btn btn-danger" id="stopBtn" disabled onclick="stopClone()">stop</button>
+            </div>
+        </div>
+
+        <!-- progress -->
+        <div class="card">
+            <div class="card-title">progress</div>
+
+            <div class="job-status idle" id="jobStatus">
+                <div class="pulse"></div>
+                <span id="jobStatusText">idle</span>
+            </div>
+
+            <div class="progress-info">
+                <span id="progressText">0 / 0 messages</span>
+                <span id="progressPct">0%</span>
+            </div>
+
+            <div class="progress-wrap">
+                <div class="progress-bar-outer">
+                    <div class="progress-bar-inner" id="progressBar"></div>
+                </div>
+            </div>
+
+            <div class="file-progress" id="fileProgress">
+                <div class="file-progress-header">
+                    <span class="file-progress-phase" id="filePhase">downloading</span>
+                    <span class="file-progress-size" id="fileSize">0 B / 0 B</span>
+                </div>
+                <div class="file-progress-name" id="fileName">—</div>
+                <div class="file-bar-outer">
+                    <div class="file-bar-inner" id="fileBar"></div>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <div class="stat-value green" id="statCloned">0</div>
+                    <div class="stat-label">cloned</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value amber" id="statSkipped">0</div>
+                    <div class="stat-label">skipped</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value red" id="statFailed">0</div>
+                    <div class="stat-label">failed</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="statTotal">0</div>
+                    <div class="stat-label">total</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- log -->
+        <div class="card">
+            <div class="card-title">log</div>
+            <div class="log-feed" id="logFeed">
+                <div class="entry" style="color: var(--text-dim)">waiting for clone job...</div>
+            </div>
+        </div>
+
+        <!-- tracker -->
+        <div class="card">
+            <div class="card-title">tracker</div>
+            <div class="tracker-info">
+                <span>total cloned: <strong id="trackerTotal">—</strong></span>
+                <span>last run: <strong id="trackerLastRun">—</strong></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const $ = id => document.getElementById(id);
+        let evtSource = null;
+        let logCount = 0;
+
+        // -- init --
+        async function init() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+
+                if (data.logged_in) {
+                    $('statusDot').classList.add('online');
+                    $('statusText').textContent = `@${data.user.username || data.user.name}`;
+                } else {
+                    $('statusText').textContent = 'not connected';
+                }
+
+                if (data.tracker) {
+                    $('trackerTotal').textContent = data.tracker.total_cloned;
+                    $('trackerLastRun').textContent = data.tracker.last_run
+                        ? new Date(data.tracker.last_run).toLocaleString()
+                        : 'never';
+                }
+
+                if (data.job && data.job.running) {
+                    $('startBtn').disabled = true;
+                    $('stopBtn').disabled = false;
+                    setJobState('running');
+                    if (data.job.last_stats) {
+                        updateStats(data.job.last_stats);
+                    }
+                    connectSSE();
+                } else {
+                    $('stopBtn').disabled = true;
+                }
+            } catch (e) {
+                $('statusText').textContent = 'error';
+            }
+
+            loadChannels();
+        }
+
+        async function loadChannels() {
+            try {
+                const res = await fetch('/api/channels');
+                const data = await res.json();
+
+                if (data.channels) {
+                    const opts = data.channels.map(c =>
+                        `<option value="${c.id}">${c.title}${c.members ? ` (${c.members})` : ''}${c.username ? ` @${c.username}` : ''}</option>`
+                    ).join('');
+
+                    const placeholder = '<option value="">— select channel —</option>';
+                    $('sourceSelect').innerHTML = placeholder + opts;
+                    $('destSelect').innerHTML = placeholder + opts;
+
+                    const statusRes = await fetch('/api/status');
+                    const statusData = await statusRes.json();
+                    if (!statusData.job || !statusData.job.running) {
+                        $('startBtn').disabled = false;
+                    }
+                }
+            } catch (e) {
+                $('sourceSelect').innerHTML = '<option value="">failed to load</option>';
+                $('destSelect').innerHTML = '<option value="">failed to load</option>';
+            }
+        }
+
+        // -- clone controls --
+        async function startClone() {
+            const source = $('sourceSelect').value;
+            const dest = $('destSelect').value;
+
+            if (!source || !dest) return alert('pick both channels');
+            if (source === dest) return alert('source and dest must be different');
+
+            $('startBtn').disabled = true;
+            $('stopBtn').disabled = false;
+            $('logFeed').innerHTML = '';
+            logCount = 0;
+
+            try {
+                const res = await fetch('/api/clone/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source, dest }),
+                });
+
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.error);
+                    $('startBtn').disabled = false;
+                    $('stopBtn').disabled = true;
+                    return;
+                }
+
+                setJobState('running');
+                connectSSE();
+            } catch (e) {
+                alert('failed to start: ' + e.message);
+                $('startBtn').disabled = false;
+            }
+        }
+
+        async function stopClone() {
+            $('stopBtn').disabled = true;
+            try {
+                await fetch('/api/clone/stop', { method: 'POST' });
+                addLog('stop signal sent', 'fail');
+            } catch (e) {
+                addLog('stop request failed', 'fail');
+            }
+        }
+
+        // -- SSE --
+        function connectSSE() {
+            if (evtSource) evtSource.close();
+            evtSource = new EventSource('/api/clone/progress');
+
+            evtSource.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                if (data.heartbeat) return;
+
+                if (data.error) {
+                    setJobState('error');
+                    addLog(`error: ${data.error}`, 'fail');
+                    cleanup();
+                    return;
+                }
+
+                updateStats(data);
+
+                if (data.current_msg) {
+                    addLog(`msg #${data.current_msg} → cloned`, 'success');
+                }
+
+                if (data.status === 'completed' || data.status === 'stopped') {
+                    setJobState(data.status === 'completed' ? 'done' : 'idle');
+                    addLog(data.status === 'completed' ? 'clone complete' : 'clone stopped', 'success');
+                    cleanup();
+                    refreshTracker();
+                }
+            };
+
+            evtSource.onerror = () => {
+                addLog('sse connection lost', 'fail');
+            };
+        }
+
+        function cleanup() {
+            if (evtSource) { evtSource.close(); evtSource = null; }
+            $('startBtn').disabled = false;
+            $('stopBtn').disabled = true;
+        }
+
+        // -- ui updates --
+        function updateStats(s) {
+            $('statCloned').textContent = s.cloned || 0;
+            $('statSkipped').textContent = s.skipped || 0;
+            $('statFailed').textContent = s.failed || 0;
+            $('statTotal').textContent = s.total || 0;
+
+            const processed = s.processed || 0;
+            const total = s.total || 0;
+            const pct = total ? Math.round((processed / total) * 100) : 0;
+            $('progressBar').style.width = pct + '%';
+            $('progressText').textContent = `${processed} / ${total} messages`;
+            $('progressPct').textContent = pct + '%';
+
+            const fp = s.file_progress;
+            const fpEl = $('fileProgress');
+            if (fp && fp.total > 0) {
+                fpEl.classList.add('active');
+                $('filePhase').textContent = fp.phase === 'uploading' ? '↑ uploading' : '↓ downloading';
+                $('filePhase').className = 'file-progress-phase ' + fp.phase;
+                $('fileName').textContent = fp.filename || '—';
+                $('fileSize').textContent = `${fp.current_human} / ${fp.total_human}`;
+                const filePct = Math.round((fp.current / fp.total) * 100);
+                $('fileBar').style.width = filePct + '%';
+                $('fileBar').className = 'file-bar-inner ' + fp.phase;
+            } else {
+                fpEl.classList.remove('active');
+            }
+        }
+
+        function setJobState(state) {
+            const el = $('jobStatus');
+            el.className = 'job-status ' + (state === 'running' ? '' : state === 'done' ? 'done' : state === 'error' ? 'error' : 'idle');
+            const labels = { running: 'cloning...', done: 'complete', idle: 'idle', error: 'error', stopped: 'stopped' };
+            $('jobStatusText').textContent = labels[state] || state;
+        }
+
+        function addLog(text, cls) {
+            const entry = document.createElement('div');
+            entry.className = `entry ${cls || ''}`;
+            entry.textContent = text;
+            $('logFeed').appendChild(entry);
+            $('logFeed').scrollTop = $('logFeed').scrollHeight;
+            logCount++;
+            if (logCount > 200) $('logFeed').removeChild($('logFeed').firstChild);
+        }
+
+        async function refreshTracker() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                if (data.tracker) {
+                    $('trackerTotal').textContent = data.tracker.total_cloned;
+                    $('trackerLastRun').textContent = data.tracker.last_run
+                        ? new Date(data.tracker.last_run).toLocaleString()
+                        : 'never';
+                }
+            } catch (e) { }
+        }
+
+        init();
+    </script>
+</body>
+
+</html>
