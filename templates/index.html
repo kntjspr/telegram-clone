@@ -541,6 +541,10 @@
         const $ = id => document.getElementById(id);
         let evtSource = null;
         let logCount = 0;
+        let jobRunning = false;
+        let sseRetries = 0;
+        let sseReconnectTimer = null;
+        let pollTimer = null;
 
         // -- init --
         async function init() {
@@ -563,6 +567,7 @@
                 }
 
                 if (data.job && data.job.running) {
+                    jobRunning = true;
                     $('startBtn').disabled = true;
                     $('stopBtn').disabled = false;
                     setJobState('running');
@@ -578,6 +583,7 @@
             }
 
             loadChannels();
+            startPolling();
         }
 
         async function loadChannels() {
@@ -594,9 +600,7 @@
                     $('sourceSelect').innerHTML = placeholder + opts;
                     $('destSelect').innerHTML = placeholder + opts;
 
-                    const statusRes = await fetch('/api/status');
-                    const statusData = await statusRes.json();
-                    if (!statusData.job || !statusData.job.running) {
+                    if (!jobRunning) {
                         $('startBtn').disabled = false;
                     }
                 }
@@ -604,6 +608,50 @@
                 $('sourceSelect').innerHTML = '<option value="">failed to load</option>';
                 $('destSelect').innerHTML = '<option value="">failed to load</option>';
             }
+        }
+
+        // -- periodic status poll (fallback when SSE drops) --
+        function startPolling() {
+            if (pollTimer) clearInterval(pollTimer);
+            pollTimer = setInterval(pollStatus, 8000);
+        }
+
+        async function pollStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+
+                if (data.tracker) {
+                    $('trackerTotal').textContent = data.tracker.total_cloned;
+                    $('trackerLastRun').textContent = data.tracker.last_run
+                        ? new Date(data.tracker.last_run).toLocaleString()
+                        : 'never';
+                }
+
+                if (data.job && data.job.running) {
+                    if (!jobRunning) {
+                        jobRunning = true;
+                        $('startBtn').disabled = true;
+                        $('stopBtn').disabled = false;
+                        setJobState('running');
+                        connectSSE();
+                    }
+                    if (data.job.last_stats && !evtSource) {
+                        updateStats(data.job.last_stats);
+                    }
+                } else if (jobRunning) {
+                    jobRunning = false;
+                    const finalStats = data.job && data.job.stats;
+                    if (finalStats && finalStats.status === 'error') {
+                        setJobState('error');
+                    } else {
+                        setJobState('done');
+                    }
+                    if (finalStats) updateStats(finalStats);
+                    cleanup();
+                    refreshTracker();
+                }
+            } catch (e) { }
         }
 
         // -- clone controls --
@@ -634,6 +682,7 @@
                     return;
                 }
 
+                jobRunning = true;
                 setJobState('running');
                 connectSSE();
             } catch (e) {
@@ -652,18 +701,26 @@
             }
         }
 
-        // -- SSE --
+        // -- SSE with auto-reconnect --
         function connectSSE() {
+            if (sseReconnectTimer) {
+                clearTimeout(sseReconnectTimer);
+                sseReconnectTimer = null;
+            }
             if (evtSource) evtSource.close();
+
             evtSource = new EventSource('/api/clone/progress');
+            sseRetries = 0;
 
             evtSource.onmessage = (e) => {
+                sseRetries = 0;
                 const data = JSON.parse(e.data);
                 if (data.heartbeat) return;
 
                 if (data.error) {
                     setJobState('error');
                     addLog(`error: ${data.error}`, 'fail');
+                    jobRunning = false;
                     cleanup();
                     return;
                 }
@@ -674,20 +731,39 @@
                     addLog(`msg #${data.current_msg} → cloned`, 'success');
                 }
 
+                if (data.status === 'retrying') {
+                    setJobState('running');
+                    addLog('retrying failed messages...', 'fail');
+                }
+
                 if (data.status === 'completed' || data.status === 'stopped') {
                     setJobState(data.status === 'completed' ? 'done' : 'idle');
                     addLog(data.status === 'completed' ? 'clone complete' : 'clone stopped', 'success');
+                    jobRunning = false;
                     cleanup();
                     refreshTracker();
                 }
             };
 
             evtSource.onerror = () => {
-                addLog('sse connection lost', 'fail');
+                if (!jobRunning) return;
+
+                evtSource.close();
+                evtSource = null;
+                sseRetries++;
+                const delay = Math.min(1000 * Math.pow(2, sseRetries - 1), 15000);
+                addLog(`sse dropped, reconnecting in ${(delay / 1000).toFixed(0)}s...`, 'fail');
+                sseReconnectTimer = setTimeout(() => {
+                    if (jobRunning) connectSSE();
+                }, delay);
             };
         }
 
         function cleanup() {
+            if (sseReconnectTimer) {
+                clearTimeout(sseReconnectTimer);
+                sseReconnectTimer = null;
+            }
             if (evtSource) { evtSource.close(); evtSource = null; }
             $('startBtn').disabled = false;
             $('stopBtn').disabled = true;
