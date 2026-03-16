@@ -1,0 +1,14 @@
+[project]
+name = "telegram-clone"
+version = "0.1.0"
+description = "telegram channel cloner"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "flask>=3.1.3",
+    "python-dotenv>=1.2.2",
+    "telethon>=1.42.0",
+    "supabase>=2.0.0",
+    "tqdm>=4.66.0",
+    "cryptg>=0.5.2",
+]
