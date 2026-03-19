@@ -75,13 +75,15 @@ def _file_size_from_message(message) -> int:
     return 0
 
 
-def _human_size(nbytes: int) -> str:
+def _human_size(nbytes: float) -> str:
     """turn byte count into something readable."""
     for unit in ("B", "KB", "MB", "GB"):
         if abs(nbytes) < 1024:
-            return f"{nbytes:.1f} {unit}"
+            if unit == "B":
+                return f"{int(nbytes)} {unit}"
+            return f"{nbytes:.2f} {unit}"
         nbytes /= 1024
-    return f"{nbytes:.1f} TB"
+    return f"{nbytes:.2f} TB"
 
 
 async def _get_upload_limit(client: TelegramClient) -> tuple[int, bool]:

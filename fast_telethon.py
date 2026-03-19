@@ -88,8 +88,8 @@ class UploadSender:
     loop: asyncio.AbstractEventLoop
 
     def __init__(self, client: TelegramClient, sender: MTProtoSender, file_id: int, part_count: int, big: bool,
-                 index: int,
-                 stride: int, loop: asyncio.AbstractEventLoop) -> None:
+                 index: int, stride: int, loop: asyncio.AbstractEventLoop,
+                 on_part_uploaded: callable = None) -> None:
         self.client = client
         self.sender = sender
         self.part_count = part_count
@@ -100,6 +100,7 @@ class UploadSender:
         self.stride = stride
         self.previous = None
         self.loop = loop
+        self.on_part_uploaded = on_part_uploaded
 
     async def next(self, data: bytes) -> None:
         if self.previous:
@@ -112,6 +113,10 @@ class UploadSender:
                   f" with {len(data)} bytes")
         await self.client._call(self.sender, self.request)
         self.request.file_part += self.stride
+        if self.on_part_uploaded:
+            r = self.on_part_uploaded(len(data))
+            if inspect.isawaitable(r):
+                await r
 
     async def disconnect(self) -> None:
         if self.previous:
@@ -127,7 +132,7 @@ class ParallelTransferrer:
     auth_key: AuthKey
     upload_ticker: int
 
-    def __init__(self, client: TelegramClient, dc_id: Optional[int] = None) -> None:
+    def __init__(self, client: TelegramClient, dc_id: Optional[int] = None, on_part_uploaded: callable = None) -> None:
         self.client = client
         self.loop = self.client.loop
         self.dc_id = dc_id or self.client.session.dc_id
@@ -135,6 +140,7 @@ class ParallelTransferrer:
                          else self.client.session.auth_key)
         self.senders = None
         self.upload_ticker = 0
+        self.on_part_uploaded = on_part_uploaded
 
     async def _cleanup(self) -> None:
         if self.senders:
@@ -186,7 +192,7 @@ class ParallelTransferrer:
     async def _create_upload_sender(self, file_id: int, part_count: int, big: bool, index: int,
                                     stride: int) -> UploadSender:
         return UploadSender(self.client, await self._create_sender(), file_id, part_count, big, index, stride,
-                            loop=self.loop)
+                            loop=self.loop, on_part_uploaded=self.on_part_uploaded)
 
     async def _create_sender(self) -> MTProtoSender:
         dc = await self.client._get_dc(self.dc_id)
@@ -269,15 +275,21 @@ async def _internal_transfer_to_telegram(client: TelegramClient,
     file_size = os.path.getsize(response.name)
 
     hash_md5 = hashlib.md5()
-    uploader = ParallelTransferrer(client)
+    uploaded_bytes = 0
+
+    async def on_part_uploaded(part_len):
+        nonlocal uploaded_bytes
+        uploaded_bytes += part_len
+        if progress_callback:
+            r = progress_callback(uploaded_bytes, file_size)
+            if inspect.isawaitable(r):
+                await r
+
+    uploader = ParallelTransferrer(client, on_part_uploaded=on_part_uploaded)
     part_size, part_count, is_large = await uploader.init_upload(file_id, file_size)
     try:
         buffer = bytearray()
         for data in stream_file(response):
-            if progress_callback:
-                r = progress_callback(response.tell(), file_size)
-                if inspect.isawaitable(r):
-                    await r
             if not is_large:
                 hash_md5.update(data)
             if len(buffer) == 0 and len(data) == part_size:
