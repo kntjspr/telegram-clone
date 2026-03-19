@@ -148,11 +148,22 @@ class ParallelTransferrer:
             self.senders = None
 
     @staticmethod
-    def _get_connection_count(file_size: int, max_count: int = 20,
+    def _get_connection_count(file_size: int, max_count: int = 8,
                               full_size: int = 100 * 1024 * 1024) -> int:
+        import psutil
+        try:
+            mem = psutil.virtual_memory()
+            available_mb = mem.available / (1024 * 1024)
+            # reserve ~300 MB for os/runtime, one connection per ~150 MB headroom
+            mem_limit = max(1, int((available_mb - 300) / 150))
+            cpu_limit = max(1, (os.cpu_count() or 1))
+            hw_cap = min(mem_limit, cpu_limit, max_count)
+        except Exception:
+            hw_cap = 2
+
         if file_size > full_size:
-            return max_count
-        return math.ceil((file_size / full_size) * max_count)
+            return max(1, hw_cap)
+        return max(1, math.ceil((file_size / full_size) * hw_cap))
 
     async def _init_download(self, connections: int, file: TypeLocation, part_count: int,
                              part_size: int) -> None:
@@ -226,13 +237,7 @@ class ParallelTransferrer:
             connection_count = 1
 
         part_size = int((part_size_kb or utils.get_appropriated_part_size(file_size)) * 1024)
-        part_count = (file_size + part_size - 1) // part_size
-
-        # telegram rejects big uploads with >4000 parts — bump part_size
-        # to the next power-of-2 KB value until we're under the limit
-        while part_count > 4000 and part_size < 512 * 1024:
-            part_size *= 2
-            part_count = (file_size + part_size - 1) // part_size
+        part_count = int((file_size + part_size - 1) // part_size)
 
         log.debug("upload plan: %s bytes, %d parts × %d bytes, large=%s",
                   file_size, part_count, part_size, is_large)
