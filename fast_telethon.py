@@ -223,9 +223,20 @@ class ParallelTransferrer:
         if connection_count is None:
             connection_count = _get_env_threads() or self._get_connection_count(file_size)
         if not is_large:
-            connection_count = 1  # Force sequential upload for small files
-        part_size = (part_size_kb or utils.get_appropriated_part_size(file_size)) * 1024
+            connection_count = 1
+
+        part_size = int((part_size_kb or utils.get_appropriated_part_size(file_size)) * 1024)
         part_count = (file_size + part_size - 1) // part_size
+
+        # telegram rejects big uploads with >4000 parts — bump part_size
+        # to the next power-of-2 KB value until we're under the limit
+        while part_count > 4000 and part_size < 512 * 1024:
+            part_size *= 2
+            part_count = (file_size + part_size - 1) // part_size
+
+        log.debug("upload plan: %s bytes, %d parts × %d bytes, large=%s",
+                  file_size, part_count, part_size, is_large)
+
         await self._init_upload(connection_count, file_id, part_count, is_large)
         return part_size, part_count, is_large
 
