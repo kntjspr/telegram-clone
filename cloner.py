@@ -31,8 +31,8 @@ log = logging.getLogger("cloner")
 FAST_TRANSFER_THRESHOLD = 5 * 1024 * 1024
 MAX_RETRY_DELAY = 300.0  # seconds, cap for exponential backoff
 RETRY_JITTER_PCT = 0.2   # +/- 20%
-FREE_UPLOAD_LIMIT = 2 * 1024 * 1024 * 1024
-PREMIUM_UPLOAD_LIMIT = 4 * 1024 * 1024 * 1024
+# mtproto hard limit — 4 GB for all accounts
+UPLOAD_LIMIT = 4 * 1024 * 1024 * 1024
 
 
 async def _tracker_call(tracker: CloneTracker, method: str, *args, **kwargs):
@@ -86,10 +86,6 @@ def _human_size(nbytes: float) -> str:
     return f"{nbytes:.2f} TB"
 
 
-async def _get_upload_limit(client: TelegramClient) -> tuple[int, bool]:
-    me = await client.get_me()
-    is_premium = bool(getattr(me, "premium", False))
-    return (PREMIUM_UPLOAD_LIMIT if is_premium else FREE_UPLOAD_LIMIT), is_premium
 
 
 def _guess_filename(message) -> str:
@@ -169,12 +165,8 @@ async def clone_channel(
     dest_entity = await client.get_entity(dest)
     source_id = source_entity.id
 
-    upload_limit, is_premium = await _get_upload_limit(client)
-    log.info(
-        "account tier: %s | upload limit: %s",
-        "premium" if is_premium else "free",
-        _human_size(upload_limit),
-    )
+    upload_limit = UPLOAD_LIMIT
+    log.info("upload limit: %s", _human_size(upload_limit))
 
     log.info(f"source: {getattr(source_entity, 'title', source)} (id: {source_id})")
     log.info(f"dest:   {getattr(dest_entity, 'title', dest)}")
@@ -211,7 +203,6 @@ async def clone_channel(
         "last_skip_limit_human": None,
         "upload_limit": upload_limit,
         "upload_limit_human": _human_size(upload_limit),
-        "is_premium": is_premium,
     }
 
     last_processed_id = 0
