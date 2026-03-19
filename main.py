@@ -9,6 +9,7 @@ import sys
 
 from telethon import TelegramClient
 from telethon.tl.types import Channel
+from tqdm import tqdm
 
 from config import API_ID, API_HASH, PHONE, SOURCE_CHANNEL, DEST_CHANNEL, SESSION_FILE
 from tracker import create_tracker
@@ -19,6 +20,7 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(message)s",
     datefmt="%H:%M:%S",
 )
+logging.getLogger("telethon").setLevel(logging.WARNING)
 log = logging.getLogger("main")
 
 
@@ -71,6 +73,64 @@ async def pick_channel(client: TelegramClient, prompt: str, default: str = "") -
     return default
 
 
+def _make_cli_progress():
+    state = {
+        "bar": None,
+        "phase": None,
+        "filename": None,
+        "total": None,
+        "last": 0,
+    }
+
+    def _close_bar():
+        if state["bar"] is not None:
+            state["bar"].close()
+            state["bar"] = None
+
+    def cb(stats: dict):
+        fp = stats.get("file_progress")
+        if not fp:
+            _close_bar()
+            return
+
+        phase = fp.get("phase")
+        filename = fp.get("filename") or "media"
+        total = fp.get("total") or 0
+        current = fp.get("current") or 0
+
+        if (
+            state["bar"] is None
+            or phase != state["phase"]
+            or filename != state["filename"]
+            or total != state["total"]
+        ):
+            _close_bar()
+            label = "DL" if phase == "downloading" else "UL"
+            state["bar"] = tqdm(
+                total=total,
+                unit="B",
+                unit_scale=True,
+                unit_divisor=1024,
+                desc=f"{label} {filename}",
+                leave=False,
+                dynamic_ncols=True,
+            )
+            state["phase"] = phase
+            state["filename"] = filename
+            state["total"] = total
+            state["last"] = 0
+
+        delta = current - state["last"]
+        if delta > 0 and state["bar"] is not None:
+            state["bar"].update(delta)
+            state["last"] = current
+
+        if total and current >= total:
+            _close_bar()
+
+    return cb
+
+
 async def run():
     if not API_ID or not API_HASH:
         log.error("API_ID and API_HASH are required. get them from https://my.telegram.org")
@@ -99,18 +159,37 @@ async def run():
     print(f"{'—' * 40}")
 
     stop_event = asyncio.Event()
+    sigint_count = 0
 
-    def _sigint_handler():
-        print(f"\n[!] SIGINT received, stopping current clone gracefully... (press again to force quit)")
-        stop_event.set()
-        
-        # force quit on second press
-        client.loop.remove_signal_handler(signal.SIGINT)
-
-    client.loop.add_signal_handler(signal.SIGINT, _sigint_handler)
+    def _handle_sigint():
+        nonlocal sigint_count
+        sigint_count += 1
+        if sigint_count == 1:
+            print(f"\n[!] SIGINT received, stopping current clone gracefully... (press again to force quit)")
+            stop_event.set()
+            return
+        print(f"\n[!] SIGINT received again, exiting now.")
+        sys.exit(1)
 
     try:
-        stats = await clone_channel(client, source, dest, tracker, stop_event=stop_event)
+        client.loop.add_signal_handler(signal.SIGINT, _handle_sigint)
+    except NotImplementedError:
+        # Windows event loops don't implement add_signal_handler
+        def _sigint_handler(signum, frame):
+            client.loop.call_soon_threadsafe(_handle_sigint)
+
+        signal.signal(signal.SIGINT, _sigint_handler)
+
+    stats = {"cloned": 0, "skipped": 0, "failed": 0, "total": 0}
+    try:
+        stats = await clone_channel(
+            client,
+            source,
+            dest,
+            tracker,
+            stop_event=stop_event,
+            progress_callback=_make_cli_progress(),
+        )
     finally:
         print(f"\n{'—' * 40}")
         print(f"done.")

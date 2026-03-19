@@ -9,4 +9,6 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "telethon>=1.42.0",
     "supabase>=2.0.0",
+    "tqdm>=4.66.0",
+    "cryptg>=0.5.2",
 ]

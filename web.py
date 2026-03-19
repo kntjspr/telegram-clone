@@ -27,6 +27,7 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(message)s",
     datefmt="%H:%M:%S",
 )
+logging.getLogger("telethon").setLevel(logging.WARNING)
 log = logging.getLogger("web")
 
 app = Flask(__name__)

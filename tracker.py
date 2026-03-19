@@ -3,6 +3,7 @@ tracker factory — picks the right backend based on TRACKER_BACKEND env var.
 all backends share the same interface:
   - is_cloned(channel_id, message_id) -> bool
   - mark_cloned(channel_id, message_id, filename, media_type)
+  - mark_skipped(channel_id, message_id, reason, file_size, limit_bytes, filename, media_type)
   - get_stats() -> dict
 """
 
@@ -27,8 +28,15 @@ class CloneTracker:
                 data = json.load(f)
                 if "failed_messages" not in data:
                     data["failed_messages"] = {}
+                if "skipped_messages" not in data:
+                    data["skipped_messages"] = {}
                 return data
-        return {"cloned_messages": {}, "failed_messages": {}, "stats": {"total_cloned": 0, "last_run": None}}
+        return {
+            "cloned_messages": {},
+            "failed_messages": {},
+            "skipped_messages": {},
+            "stats": {"total_cloned": 0, "last_run": None},
+        }
 
     def _save(self):
         """atomic write so a crash mid-save doesn't nuke the tracker"""
@@ -63,6 +71,8 @@ class CloneTracker:
         failed_key = self._key(channel_id, message_id)
         if failed_key in self.data.get("failed_messages", {}):
             del self.data["failed_messages"][failed_key]
+        if failed_key in self.data.get("skipped_messages", {}):
+            del self.data["skipped_messages"][failed_key]
             
         self.data["stats"]["total_cloned"] = len(self.data["cloned_messages"])
         self.data["stats"]["last_run"] = datetime.now(timezone.utc).isoformat()
@@ -74,6 +84,28 @@ class CloneTracker:
             "message_id": message_id,
             "reason": reason,
             "failed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._save()
+
+    def mark_skipped(
+        self,
+        channel_id: int | str,
+        message_id: int,
+        reason: str,
+        file_size: int | None = None,
+        limit_bytes: int | None = None,
+        filename: str | None = None,
+        media_type: str | None = None,
+    ):
+        self.data["skipped_messages"][self._key(channel_id, message_id)] = {
+            "channel_id": str(channel_id),
+            "message_id": message_id,
+            "reason": reason,
+            "file_size": file_size,
+            "limit_bytes": limit_bytes,
+            "filename": filename,
+            "media_type": media_type,
+            "skipped_at": datetime.now(timezone.utc).isoformat(),
         }
         self._save()
 

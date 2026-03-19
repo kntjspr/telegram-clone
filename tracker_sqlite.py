@@ -45,6 +45,18 @@ class SqliteTracker:
                 PRIMARY KEY (channel_id, message_id)
             );
 
+            CREATE TABLE IF NOT EXISTS skipped_messages (
+                channel_id TEXT NOT NULL,
+                message_id INTEGER NOT NULL,
+                reason TEXT,
+                file_size INTEGER,
+                limit_bytes INTEGER,
+                filename TEXT,
+                media_type TEXT,
+                skipped_at TEXT NOT NULL,
+                PRIMARY KEY (channel_id, message_id)
+            );
+
             CREATE TABLE IF NOT EXISTS stats (
                 key TEXT PRIMARY KEY,
                 value TEXT
@@ -81,6 +93,10 @@ class SqliteTracker:
             "DELETE FROM failed_messages WHERE channel_id = ? AND message_id = ?",
             (str(channel_id), message_id),
         )
+        self._conn.execute(
+            "DELETE FROM skipped_messages WHERE channel_id = ? AND message_id = ?",
+            (str(channel_id), message_id),
+        )
         self._conn.commit()
 
     def mark_failed(self, channel_id: int | str, message_id: int, reason: str):
@@ -90,6 +106,25 @@ class SqliteTracker:
                (channel_id, message_id, reason, failed_at)
                VALUES (?, ?, ?, ?)""",
             (str(channel_id), message_id, reason, now),
+        )
+        self._conn.commit()
+
+    def mark_skipped(
+        self,
+        channel_id: int | str,
+        message_id: int,
+        reason: str,
+        file_size: int | None = None,
+        limit_bytes: int | None = None,
+        filename: str | None = None,
+        media_type: str | None = None,
+    ):
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """INSERT OR REPLACE INTO skipped_messages
+               (channel_id, message_id, reason, file_size, limit_bytes, filename, media_type, skipped_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (str(channel_id), message_id, reason, file_size, limit_bytes, filename, media_type, now),
         )
         self._conn.commit()
 
