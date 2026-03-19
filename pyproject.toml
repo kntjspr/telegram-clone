@@ -11,5 +11,4 @@ dependencies = [
     "supabase>=2.0.0",
     "tqdm>=4.66.0",
     "cryptg>=0.5.2",
-    "psutil>=5.9.0",
 ]

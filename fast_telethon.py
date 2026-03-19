@@ -32,6 +32,8 @@ except ImportError:
 
 log: logging.Logger = logging.getLogger("fasttelethon")
 
+SENDER_TIMEOUT = float(os.getenv("FAST_TELETHON_TIMEOUT", "20"))
+
 TypeLocation = Union[Document, InputDocumentFileLocation, InputPeerPhotoFileLocation,
                      InputFileLocation, InputPhotoFileLocation]
 
@@ -69,7 +71,10 @@ class DownloadSender:
     async def next(self) -> Optional[bytes]:
         if not self.remaining:
             return None
-        result = await self.client._call(self.sender, self.request)
+        result = await asyncio.wait_for(
+            self.client._call(self.sender, self.request),
+            timeout=SENDER_TIMEOUT,
+        )
         self.remaining -= 1
         self.request.offset += self.stride
         return result.bytes
@@ -111,7 +116,10 @@ class UploadSender:
         self.request.bytes = data
         log.debug(f"Sending file part {self.request.file_part}/{self.part_count}"
                   f" with {len(data)} bytes")
-        await self.client._call(self.sender, self.request)
+        await asyncio.wait_for(
+            self.client._call(self.sender, self.request),
+            timeout=SENDER_TIMEOUT,
+        )
         self.request.file_part += self.stride
         if self.on_part_uploaded:
             r = self.on_part_uploaded(len(data))
@@ -148,22 +156,11 @@ class ParallelTransferrer:
             self.senders = None
 
     @staticmethod
-    def _get_connection_count(file_size: int, max_count: int = 8,
+    def _get_connection_count(file_size: int, max_count: int = 20,
                               full_size: int = 100 * 1024 * 1024) -> int:
-        import psutil
-        try:
-            mem = psutil.virtual_memory()
-            available_mb = mem.available / (1024 * 1024)
-            # reserve ~300 MB for os/runtime, one connection per ~150 MB headroom
-            mem_limit = max(1, int((available_mb - 300) / 150))
-            cpu_limit = max(1, (os.cpu_count() or 1))
-            hw_cap = min(mem_limit, cpu_limit, max_count)
-        except Exception:
-            hw_cap = 2
-
         if file_size > full_size:
-            return max(1, hw_cap)
-        return max(1, math.ceil((file_size / full_size) * hw_cap))
+            return max_count
+        return math.ceil((file_size / full_size) * max_count)
 
     async def _init_download(self, connections: int, file: TypeLocation, part_count: int,
                              part_size: int) -> None:
