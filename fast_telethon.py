@@ -234,7 +234,7 @@ class ParallelTransferrer:
             connection_count = 1
 
         part_size = int((part_size_kb or utils.get_appropriated_part_size(file_size)) * 1024)
-        part_count = int((file_size + part_size - 1) // part_size)
+        part_count = math.ceil(file_size / part_size)
 
         log.debug("upload plan: %s bytes, %d parts × %d bytes, large=%s",
                   file_size, part_count, part_size, is_large)
@@ -309,32 +309,39 @@ async def _internal_transfer_to_telegram(client: TelegramClient,
 
     uploader = ParallelTransferrer(client, on_part_uploaded=on_part_uploaded)
     part_size, part_count, is_large = await uploader.init_upload(file_id, file_size)
+    parts_sent = 0
     try:
         buffer = bytearray()
-        for data in stream_file(response):
+        for data in stream_file(response, chunk_size=part_size):
             if not is_large:
                 hash_md5.update(data)
             if len(buffer) == 0 and len(data) == part_size:
                 await uploader.upload(data)
+                parts_sent += 1
                 continue
             new_len = len(buffer) + len(data)
             if new_len >= part_size:
                 cutoff = part_size - len(buffer)
                 buffer.extend(data[:cutoff])
                 await uploader.upload(bytes(buffer))
+                parts_sent += 1
                 buffer.clear()
                 buffer.extend(data[cutoff:])
             else:
                 buffer.extend(data)
         if len(buffer) > 0:
             await uploader.upload(bytes(buffer))
+            parts_sent += 1
+        if parts_sent != part_count:
+            log.warning("part count mismatch: expected %d, sent %d (file_size=%d, part_size=%d)",
+                        part_count, parts_sent, file_size, part_size)
         await uploader.finish_upload()
     finally:
         await uploader._cleanup()
     if is_large:
-        return InputFileBig(file_id, part_count, "upload"), file_size
+        return InputFileBig(file_id, parts_sent, "upload"), file_size
     else:
-        return InputFile(file_id, part_count, "upload", hash_md5.hexdigest()), file_size
+        return InputFile(file_id, parts_sent, "upload", hash_md5.hexdigest()), file_size
 
 
 async def download_file(client: TelegramClient,
