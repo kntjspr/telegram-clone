@@ -200,23 +200,32 @@ class ParallelTransferrer:
         await sender.connect(self.client._connection(dc.ip_address, dc.port, dc.id,
                                                      loggers=self.client._log,
                                                      proxy=self.client._proxy))
+        import copy
         if not self.auth_key:
             log.debug(f"Exporting auth to DC {self.dc_id}")
             auth = await self.client(ExportAuthorizationRequest(self.dc_id))
-            self.client._init_request.query = ImportAuthorizationRequest(id=auth.id,
-                                                                         bytes=auth.bytes)
-            req = InvokeWithLayerRequest(LAYER, self.client._init_request)
+            init_req = copy.copy(self.client._init_request)
+            init_req.query = ImportAuthorizationRequest(id=auth.id, bytes=auth.bytes)
+            req = InvokeWithLayerRequest(LAYER, init_req)
             await sender.send(req)
             self.auth_key = sender.auth_key
+        else:
+            from telethon.tl.functions.help import GetConfigRequest
+            from telethon.tl.functions import InvokeWithoutUpdatesRequest
+            log.debug(f"Initializing fresh connection to DC {self.dc_id}")
+            req = InvokeWithoutUpdatesRequest(GetConfigRequest())
+            await sender.send(req)
         return sender
 
     async def init_upload(self, file_id: int, file_size: int, part_size_kb: Optional[float] = None,
                           connection_count: Optional[int] = None) -> Tuple[int, int, bool]:
+        is_large = file_size > 10 * 1024 * 1024
         if connection_count is None:
             connection_count = _get_env_threads() or self._get_connection_count(file_size)
+        if not is_large:
+            connection_count = 1  # Force sequential upload for small files
         part_size = (part_size_kb or utils.get_appropriated_part_size(file_size)) * 1024
         part_count = (file_size + part_size - 1) // part_size
-        is_large = file_size > 10 * 1024 * 1024
         await self._init_upload(connection_count, file_id, part_count, is_large)
         return part_size, part_count, is_large
 
