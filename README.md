@@ -1,8 +1,27 @@
+
+
+# telegram channel cloner
+
 ![screenshot](assets/screenshot.png)
 
-telegram channel cloner built on telethon. logs into your account, mirrors messages and files from a source channel to a destination channel. tracks what's been cloned so re-runs skip duplicates. deletes downloaded files after upload.
+built on telethon. logs into your account, mirrors messages and files from a source channel to a destination channel. tracks what's been cloned so re-runs skip duplicates. deletes downloaded files after upload.
 
-## setup
+## 1. install uv (recommended)
+
+the easiest way to run this is using `uv`. it manages python and dependencies automatically.
+
+* **macOS / Linux:**
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
+* **Windows:**
+    ```powershell
+    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+    ```
+
+## 2. setup
+
+download the repository [here](https://github.com/kntjspr/telegram-clone/releases/latest), then sync the environment:
 
 ```bash
 uv sync
@@ -11,12 +30,16 @@ uv sync
 copy `.env.example` to `.env` and fill in your credentials:
 
 ```bash
+# linux/mac
 cp .env.example .env
-```
 
+# windows (cmd)
+copy .env.example .env
+```
+open `.env` on text editor and edit the `.env` values.
 you need `API_ID` and `API_HASH` from [my.telegram.org](https://my.telegram.org/apps).
 
-## usage
+## 3. usage
 
 ```bash
 uv run main.py
@@ -28,23 +51,25 @@ you can set `SOURCE_CHANNEL` and `DEST_CHANNEL` in `.env` or pick interactively 
 
 ## web panel
 
+if you prefer a visual interface:
+
 ```bash
 uv run web.py
 ```
 
 opens at `http://localhost:5000`. pick source/dest channels from dropdowns, hit start, and watch live progress. you can stop mid-clone and resume later.
 
-## what it clones
+---
 
+### what it clones
 - photos, videos, documents, audio, voice notes, gifs, stickers
 - text-only messages with formatting preserved
 - captions on media
 
-## how tracking works
-
+### how tracking works
 a `clone_tracker.json` file records every message ID that's been transferred. if you stop and restart, it picks up where it left off. no duplicate uploads.
 
-## env reference
+### env reference
 
 | var | description |
 |---|---|
@@ -53,4 +78,3 @@ a `clone_tracker.json` file records every message ID that's been transferred. if
 | `PHONE` | phone number with country code |
 | `SOURCE_CHANNEL` | source channel username or id |
 | `DEST_CHANNEL` | destination channel username or id |
-
