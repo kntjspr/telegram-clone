@@ -20,7 +20,7 @@ from config import (
     NOTIFY_ON_ERROR, NOTIFY_ON_COMPLETE,
 )
 from tracker import create_tracker
-from cloner import clone_channel
+from cloner import clone_channel, _file_size_from_message, _media_type, _human_size
 
 logging.basicConfig(
     level=logging.INFO,
@@ -138,6 +138,59 @@ def api_channels():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/channel/size")
+def api_channel_size():
+    channel_id = request.args.get("channel_id")
+    if not channel_id:
+        return jsonify({"error": "channel_id is required"}), 400
+
+    try:
+        cid = int(channel_id)
+    except (ValueError, TypeError):
+        cid = channel_id
+
+    async def _estimate():
+        entity = await _client.get_entity(cid)
+        title = getattr(entity, "title", str(cid))
+
+        breakdown = {}
+        total_size = 0
+        total_messages = 0
+
+        async for msg in _client.iter_messages(entity):
+            total_messages += 1
+            mtype = _media_type(msg) or "text"
+
+            if mtype not in breakdown:
+                breakdown[mtype] = {"count": 0, "size": 0}
+            breakdown[mtype]["count"] += 1
+
+            if mtype != "text":
+                fsize = _file_size_from_message(msg)
+                breakdown[mtype]["size"] += fsize
+                total_size += fsize
+
+        for k, v in breakdown.items():
+            if "size" in v:
+                v["size_human"] = _human_size(v["size"])
+
+        return {
+            "channel_id": cid,
+            "channel_title": title,
+            "total_messages": total_messages,
+            "total_media_size": total_size,
+            "total_media_size_human": _human_size(total_size),
+            "breakdown": breakdown,
+        }
+
+    try:
+        result = _run_async(_estimate())
+        return jsonify(result)
+    except Exception as e:
+        log.error(f"channel size estimation failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/clone/start", methods=["POST"])
 def api_clone_start():
     global _stop_event
@@ -155,6 +208,8 @@ def api_clone_start():
 
         if str(source) == str(dest):
             return jsonify({"error": "source and dest can't be the same"}), 400
+
+        largest_first = bool(data.get("largest_first", False))
 
         _current_job["running"] = True
         _current_job["stats"] = None
@@ -180,6 +235,7 @@ def api_clone_start():
                 tracker,
                 progress_callback=_broadcast_progress,
                 stop_event=_stop_event,
+                largest_first=largest_first,
             ))
 
             _current_job["stats"] = stats

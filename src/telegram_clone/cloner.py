@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Callable
 
 from telethon import TelegramClient, utils
-from telethon.errors.rpcerrorlist import FileReferenceExpiredError
+from telethon.errors.rpcerrorlist import FileReferenceExpiredError, FloodWaitError
 from telethon.tl.types import (
     MessageMediaPhoto, MessageMediaDocument,
     InputMediaUploadedDocument, InputMediaUploadedPhoto,
@@ -33,6 +33,13 @@ MAX_RETRY_DELAY = 300.0  # seconds, cap for exponential backoff
 RETRY_JITTER_PCT = 0.2   # +/- 20%
 FREE_UPLOAD_LIMIT = 2 * 1024 * 1024 * 1024
 PREMIUM_UPLOAD_LIMIT = 4 * 1024 * 1024 * 1024
+
+
+async def _tracker_call(tracker: CloneTracker, method: str, *args, **kwargs):
+    async_method = getattr(tracker, f"a{method}", None)
+    if async_method is not None:
+        return await async_method(*args, **kwargs)
+    return getattr(tracker, method)(*args, **kwargs)
 
 
 def _media_type(message) -> str | None:
@@ -144,10 +151,12 @@ async def clone_channel(
     rate_limit_delay: float = 2.0,
     progress_callback: Callable[[dict], None] | None = None,
     stop_event: asyncio.Event | None = None,
-    max_retries: int = 0,
+    max_retries: int = 3,
     retry_delay: float = 5.0,
     follow: bool = True,
     follow_poll_interval: float = 5.0,
+    skip_history: bool = False,
+    largest_first: bool = True,
 ):
     """clone all messages from source channel to dest channel."""
 
@@ -222,7 +231,7 @@ async def clone_channel(
         stats["processed"] += 1
         stats["file_progress"] = None
 
-        if tracker.is_cloned(source_id, msg_id):
+        if await _tracker_call(tracker, "is_cloned", source_id, msg_id):
             stats["skipped"] += 1
             if progress_callback:
                 progress_callback(stats.copy())
@@ -241,7 +250,9 @@ async def clone_channel(
             stats["last_skip_limit"] = upload_limit
             stats["last_skip_limit_human"] = _human_size(upload_limit)
             try:
-                tracker.mark_skipped(
+                await _tracker_call(
+                    tracker,
+                    "mark_skipped",
                     source_id,
                     msg_id,
                     reason="file too large",
@@ -279,13 +290,31 @@ async def clone_channel(
         if progress_callback:
             progress_callback(stats.copy())
 
-        await asyncio.sleep(rate_limit_delay)
+        jittered_delay = random.uniform(rate_limit_delay * 0.6, rate_limit_delay * 1.4)
+        await asyncio.sleep(jittered_delay)
         return True
 
-    async for message in client.iter_messages(source_entity, reverse=True):
-        ok = await _process_message(message)
-        if not ok:
-            break
+    if skip_history:
+        latest = await client.get_messages(source_entity, limit=1)
+        if latest:
+            last_processed_id = latest[0].id
+        log.info(f"skipping history, starting from message ID {last_processed_id}...")
+    elif largest_first:
+        log.info("collecting messages for largest-first ordering...")
+        all_msgs = []
+        async for message in client.iter_messages(source_entity):
+            all_msgs.append(message)
+        all_msgs.sort(key=lambda m: _file_size_from_message(m), reverse=True)
+        log.info(f"sorted {len(all_msgs)} messages by file size (largest first)")
+        for message in all_msgs:
+            ok = await _process_message(message)
+            if not ok:
+                break
+    else:
+        async for message in client.iter_messages(source_entity, reverse=True):
+            ok = await _process_message(message)
+            if not ok:
+                break
 
     if follow and stats["status"] != "stopped":
         stats["status"] = "watching"
@@ -329,6 +358,7 @@ async def _try_clone_with_retry(
 
     attempt = 0
     file_ref_attempts = 0
+    flood_hits = 0
     retry_forever = max_retries <= 0
     while True:
         if stop_event and stop_event.is_set():
@@ -353,38 +383,72 @@ async def _try_clone_with_retry(
                 f"msg #{msg_id} cloned"
             )
             return True, ""
-        except Exception as e:
-            if isinstance(e, FileReferenceExpiredError):
-                file_ref_attempts += 1
+        except FloodWaitError as e:
+            # telegram rate limit — wait it out, don't count as a retry attempt
+            flood_hits += 1
+            multiplier = min(flood_hits, 3) * 0.5 + 1.0  # 1.5x, 2x, 2.5x, 2.5x...
+            if flood_hits >= 3:
+                multiplier = 3.0
+            base_wait = e.seconds * multiplier
+            jitter = base_wait * RETRY_JITTER_PCT
+            wait = min(base_wait + random.uniform(-jitter, jitter), MAX_RETRY_DELAY * 6)
+            wait = max(wait, e.seconds)  # never sleep less than what telegram asked
+
+            stats["status"] = "flood_wait"
+            stats["last_error"] = f"FloodWait {e.seconds}s (sleeping {wait:.0f}s, x{multiplier:.1f})"
+            stats["last_error_msg_id"] = msg_id
+            stats["last_error_at"] = datetime.now(timezone.utc).isoformat()
+            stats["last_error_attempt"] = attempt
+            stats["last_error_wait"] = wait
+            if progress_callback:
+                progress_callback(stats.copy())
+
+            log.warning(
+                f"flood wait hit on msg #{msg_id}, sleeping {wait:.0f}s "
+                f"(telegram asked {e.seconds}s, multiplier x{multiplier:.1f}, hit #{flood_hits})"
+            )
+            await asyncio.sleep(wait)
+            attempt -= 1  # don't burn a retry attempt on flood waits
+            continue
+
+        except FileReferenceExpiredError as e:
+            file_ref_attempts += 1
+            ref_delay = random.uniform(0.5, 1.5)
+            log.info(f"file reference expired for msg #{msg_id}, refreshing (attempt {file_ref_attempts}/3, delay {ref_delay:.1f}s)")
+            await asyncio.sleep(ref_delay)
+            try:
+                refreshed = await client.get_messages(message.chat_id or message.peer_id, ids=msg_id)
+            except Exception as refresh_exc:
+                log.warning(f"failed to refresh msg #{msg_id} after FileReferenceExpiredError: {refresh_exc}")
+            else:
+                if refreshed:
+                    message = refreshed
+            if file_ref_attempts >= 3:
+                error_reason = str(e)
+                stats["status"] = "failed"
+                stats["last_error"] = error_reason
+                stats["last_error_msg_id"] = msg_id
+                stats["last_error_at"] = datetime.now(timezone.utc).isoformat()
+                stats["last_error_attempt"] = attempt
+                stats["last_error_wait"] = None
+                if msg_id not in stats["failed_ids"]:
+                    stats["failed_ids"].append(msg_id)
+                stats["failed"] = len(stats["failed_ids"])
+                if progress_callback:
+                    progress_callback(stats.copy())
                 try:
-                    refreshed = await client.get_messages(message.chat_id or message.peer_id, ids=msg_id)
-                except Exception as refresh_exc:
-                    log.warning(f"failed to refresh msg #{msg_id} after FileReferenceExpiredError: {refresh_exc}")
-                else:
-                    if refreshed:
-                        message = refreshed
-                if file_ref_attempts >= 3:
-                    error_reason = str(e)
-                    stats["status"] = "failed"
-                    stats["last_error"] = error_reason
-                    stats["last_error_msg_id"] = msg_id
-                    stats["last_error_at"] = datetime.now(timezone.utc).isoformat()
-                    stats["last_error_attempt"] = attempt
-                    stats["last_error_wait"] = None
-                    if msg_id not in stats["failed_ids"]:
-                        stats["failed_ids"].append(msg_id)
-                    stats["failed"] = len(stats["failed_ids"])
-                    if progress_callback:
-                        progress_callback(stats.copy())
-                    try:
-                        tracker.mark_failed(source_id, msg_id, error_reason)
-                    except Exception as mark_exc:
-                        log.warning(f"failed to record failed msg #{msg_id}: {mark_exc}")
-                    log.error(
-                        f"msg #{msg_id} permanently failed after {file_ref_attempts} FileReferenceExpiredError "
-                        f"refresh attempts: {error_reason}"
-                    )
-                    return False, error_reason
+                    await _tracker_call(tracker, "mark_failed", source_id, msg_id, error_reason)
+                except Exception as mark_exc:
+                    log.warning(f"failed to record failed msg #{msg_id}: {mark_exc}")
+                log.error(
+                    f"msg #{msg_id} permanently failed after {file_ref_attempts} FileReferenceExpiredError "
+                    f"refresh attempts: {error_reason}"
+                )
+                return False, error_reason
+            attempt -= 1  # ref refresh isn't a real retry either
+            continue
+
+        except Exception as e:
             error_reason = str(e)
             wait = retry_delay * (2 ** (attempt - 1))
             wait = min(wait, MAX_RETRY_DELAY)
@@ -402,12 +466,11 @@ async def _try_clone_with_retry(
             if progress_callback:
                 progress_callback(stats.copy())
             try:
-                tracker.mark_failed(source_id, msg_id, error_reason)
+                await _tracker_call(tracker, "mark_failed", source_id, msg_id, error_reason)
             except Exception as mark_exc:
                 log.warning(f"failed to record failed msg #{msg_id}: {mark_exc}")
 
             if not retry_forever and attempt >= max_retries:
-                stats["failed"] += 1
                 log.error(f"msg #{msg_id} permanently failed after {max_retries} attempts: {error_reason}")
                 return False, error_reason
 
@@ -417,7 +480,7 @@ async def _try_clone_with_retry(
             )
             await asyncio.sleep(wait)
 
-    return False, "Max retries exceeded"
+    return False, "max retries exceeded"
 
 
 async def _clone_message(
@@ -444,7 +507,14 @@ async def _clone_message(
     elif caption:
         await client.send_message(dest_entity, caption, formatting_entities=message.entities)
 
-    tracker.mark_cloned(source_id, message.id, filename=filename, media_type=media_type)
+    await _tracker_call(
+        tracker,
+        "mark_cloned",
+        source_id,
+        message.id,
+        filename=filename,
+        media_type=media_type,
+    )
 
 
 async def _download_and_reupload(
@@ -490,15 +560,23 @@ async def _download_and_reupload(
         return cb
 
     if use_fast:
-        return await _fast_transfer(
-            client, message, dest_entity, caption, pre_name,
-            stats, progress_callback, _make_progress_cb,
-        )
-    else:
-        return await _standard_transfer(
-            client, message, dest_entity, caption, pre_name,
-            stats, _make_progress_cb,
-        )
+        try:
+            return await _fast_transfer(
+                client, message, dest_entity, caption, pre_name,
+                stats, progress_callback, _make_progress_cb,
+            )
+        except Exception as e:
+            log.warning(f"fast transfer failed for {pre_name}, falling back to standard: {e}")
+            stats["file_progress"] = None
+            return await _standard_transfer(
+                client, message, dest_entity, caption, pre_name,
+                stats, _make_progress_cb,
+            )
+
+    return await _standard_transfer(
+        client, message, dest_entity, caption, pre_name,
+        stats, _make_progress_cb,
+    )
 
 
 async def _fast_transfer(

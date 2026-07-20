@@ -468,6 +468,88 @@
                 padding: 20px 14px;
             }
         }
+
+        /* channel size estimation */
+        .btn-sm {
+            padding: 8px 14px;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            outline: none;
+            background: var(--surface-2);
+            color: var(--text-dim);
+            border: 1px solid var(--border);
+            margin-top: 8px;
+        }
+
+        .btn-sm:hover:not(:disabled) {
+            color: var(--text);
+            border-color: var(--accent);
+        }
+
+        .btn-sm:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .size-result {
+            display: none;
+            margin-top: 12px;
+            padding: 14px 16px;
+            background: var(--surface-2);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .size-result.active {
+            display: block;
+        }
+
+        .size-result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .size-result-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .size-result-total {
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .size-breakdown {
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            gap: 4px 16px;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        .size-breakdown .type-label {
+            text-transform: capitalize;
+        }
+
+        .size-breakdown .type-count {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .size-breakdown .type-size {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            color: var(--text);
+        }
     </style>
 </head>
 
@@ -486,15 +568,22 @@
             <div class="card-title">channels</div>
             <div class="select-group">
                 <label for="sourceSelect">source — clone from</label>
-                <select id="sourceSelect">
-                    <option value="">loading channels...</option>
-                </select>
+                <select id="sourceSelect"></select>
+                <button class="btn-sm" id="estimateBtn" onclick="estimateSize()" disabled>estimate channel size</button>
             </div>
+            <div id="sizeResult" class="size-result"></div>
             <div class="select-group">
                 <label for="destSelect">destination — clone to</label>
                 <select id="destSelect">
                     <option value="">loading channels...</option>
                 </select>
+            </div>
+            <div class="btn-row">
+                <label
+                    style="display:flex;align-items:center;gap:8px;font-size:0.8rem;color:var(--text-dim);cursor:pointer;user-select:none;">
+                    <input type="checkbox" id="largestFirstCheck"
+                        style="accent-color:var(--accent);width:16px;height:16px;cursor:pointer;"> largest files first
+                </label>
             </div>
             <div class="btn-row">
                 <button class="btn btn-primary" id="startBtn" disabled onclick="startClone()">start clone</button>
@@ -651,6 +740,7 @@
                     if (!jobRunning) {
                         $('startBtn').disabled = false;
                     }
+                    $('estimateBtn').disabled = false;
                 }
             } catch (e) {
                 $('sourceSelect').innerHTML = '<option value="">failed to load</option>';
@@ -719,7 +809,7 @@
                 const res = await fetch('/api/clone/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ source, dest }),
+                    body: JSON.stringify({ source, dest, largest_first: $('largestFirstCheck').checked }),
                 });
 
                 const data = await res.json();
@@ -793,8 +883,8 @@
                     addLog(`skipped msg #${data.last_skip_msg_id}${name} — ${size} > ${limit}`, 'fail');
                 }
 
-                if (data.status === 'retrying') {
-                    setJobState('running');
+                if (data.status === 'retrying' || data.status === 'flood_wait') {
+                    setJobState(data.status === 'flood_wait' ? 'flood_wait' : 'running');
                 }
 
                 if (data.status === 'watching') {
@@ -881,7 +971,7 @@
         function setJobState(state) {
             const el = $('jobStatus');
             el.className = 'job-status ' + (state === 'running' || state === 'watching' ? '' : state === 'done' ? 'done' : state === 'error' ? 'error' : 'idle');
-            const labels = { running: 'cloning...', watching: 'live sync', done: 'complete', idle: 'idle', error: 'error', stopped: 'stopped' };
+            const labels = { running: 'cloning...', watching: 'live sync', done: 'complete', idle: 'idle', error: 'error', stopped: 'stopped', flood_wait: 'flood wait...' };
             $('jobStatusText').textContent = labels[state] || state;
             lastJobState = state;
         }
@@ -890,10 +980,14 @@
             const entry = document.createElement('div');
             entry.className = `entry ${cls || ''}`;
             entry.textContent = text;
-            $('logFeed').appendChild(entry);
-            $('logFeed').scrollTop = $('logFeed').scrollHeight;
+            const feed = $('logFeed');
+            if (feed.firstChild) {
+                feed.insertBefore(entry, feed.firstChild);
+            } else {
+                feed.appendChild(entry);
+            }
             logCount++;
-            if (logCount > 200) $('logFeed').removeChild($('logFeed').firstChild);
+            if (logCount > 200 && feed.lastChild) feed.removeChild(feed.lastChild);
         }
 
         async function refreshTracker() {
@@ -907,6 +1001,58 @@
                         : 'never';
                 }
             } catch (e) { }
+        }
+
+        async function estimateSize() {
+            const channelId = $('sourceSelect').value;
+            if (!channelId) return alert('pick a source channel first');
+
+            const btn = $('estimateBtn');
+            const resultEl = $('sizeResult');
+
+            btn.disabled = true;
+            btn.textContent = 'scanning...';
+            resultEl.classList.remove('active');
+
+            try {
+                const res = await fetch(`/api/channel/size?channel_id=${encodeURIComponent(channelId)}`);
+                const data = await res.json();
+
+                if (data.error) {
+                    resultEl.innerHTML = `<div style="color: var(--red); font-size: 0.8rem;">${data.error}</div>`;
+                    resultEl.classList.add('active');
+                    return;
+                }
+
+                let breakdownHTML = '';
+                const order = ['video', 'document', 'photo', 'audio', 'voice', 'video_note', 'sticker', 'gif', 'text'];
+                const types = Object.keys(data.breakdown).sort((a, b) => {
+                    const ai = order.indexOf(a), bi = order.indexOf(b);
+                    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+                });
+
+                for (const t of types) {
+                    const info = data.breakdown[t];
+                    breakdownHTML += `<span class="type-label">${t}</span>`;
+                    breakdownHTML += `<span class="type-count">${info.count}</span>`;
+                    breakdownHTML += `<span class="type-size">${info.size_human || '—'}</span>`;
+                }
+
+                resultEl.innerHTML = `
+                    <div class="size-result-header">
+                        <span class="size-result-title">${data.channel_title} — ${data.total_messages} messages</span>
+                        <span class="size-result-total">${data.total_media_size_human}</span>
+                    </div>
+                    <div class="size-breakdown">${breakdownHTML}</div>
+                `;
+                resultEl.classList.add('active');
+            } catch (e) {
+                resultEl.innerHTML = `<div style="color: var(--red); font-size: 0.8rem;">failed: ${e.message}</div>`;
+                resultEl.classList.add('active');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'estimate channel size';
+            }
         }
 
         init();

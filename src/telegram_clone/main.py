@@ -150,9 +150,19 @@ async def run():
         log.error("source and dest are the same channel, that's a loop my guy")
         sys.exit(1)
 
+    print("\n[1] clone entire history (oldest to newest)")
+    print("[2] skip history, listen for new messages only")
+    print("[3] largest files first")
+    while True:
+        hist_choice = input("pick mode [1/2/3]: ").strip()
+        if hist_choice in ("1", "2", "3"):
+            break
+    skip_history = (hist_choice == "2")
+    largest_first = (hist_choice == "3")
+
     tracker = create_tracker()
     existing = tracker.get_stats()
-    if existing["total_cloned"] > 0:
+    if existing["total_cloned"] > 0 and not skip_history:
         log.info(f"resuming — {existing['total_cloned']} messages already cloned (last run: {existing['last_run']})")
 
     print(f"\nstarting clone...")
@@ -189,6 +199,8 @@ async def run():
             tracker,
             stop_event=stop_event,
             progress_callback=_make_cli_progress(),
+            skip_history=skip_history,
+            largest_first=largest_first,
         )
     finally:
         print(f"\n{'—' * 40}")
