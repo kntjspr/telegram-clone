@@ -214,8 +214,18 @@ async def run():
 
 
 def main():
-    asyncio.run(run())
+    import argparse
+    parser = argparse.ArgumentParser(description="telegram channel cloner")
+    parser.add_argument("--cli", action="store_true", help="run in cli mode instead of web interface")
+    args = parser.parse_args()
+
+    if args.cli:
+        asyncio.run(run())
+    else:
+        from web import app, WEB_HOST, WEB_PORT
+        app.run(host=WEB_HOST, port=WEB_PORT, debug=False, threaded=True)
 
 
 if __name__ == "__main__":
     main()
+
