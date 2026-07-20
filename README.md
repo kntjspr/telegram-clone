@@ -3,7 +3,7 @@
 ![CI](https://github.com/kntjspr/telegram-clone/actions/workflows/ci.yml/badge.svg)
 ![Docker](https://github.com/kntjspr/telegram-clone/actions/workflows/docker.yml/badge.svg)
 
-A tool to clone Telegram channels, tracking cloned messages and providing a web interface.
+A tool to clone Telegram channels, tracking cloned messages, files and media and providing a web interface.
 
 ![Web Interface](assets/dashboard.png)
 
