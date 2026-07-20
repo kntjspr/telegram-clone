@@ -17,7 +17,7 @@ from telethon.tl.types import Channel
 
 from config import (
     API_ID, API_HASH, PHONE, SESSION_FILE, WEB_HOST, WEB_PORT,
-    NOTIFY_ON_ERROR, NOTIFY_ON_COMPLETE,
+    NOTIFY_ON_ERROR, NOTIFY_ON_COMPLETE, BASE_DIR,
 )
 from tracker import create_tracker
 from cloner import clone_channel, _file_size_from_message, _media_type, _human_size
@@ -30,7 +30,13 @@ logging.basicConfig(
 logging.getLogger("telethon").setLevel(logging.WARNING)
 log = logging.getLogger("web")
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    static_folder=str(BASE_DIR.parent.parent / "assets"),
+    static_url_path="/assets",
+    template_folder=str(BASE_DIR.parent.parent / "templates"),
+)
+
 
 # -- telethon client lifecycle --
 _loop: asyncio.AbstractEventLoop = None
@@ -312,6 +318,8 @@ def _shutdown_handler(signum, frame):
                 _run_async(_notify_self(f"shutdown triggered ({sig_name}), stopping current clone"))
             except Exception:
                 pass
+
+    raise KeyboardInterrupt
 
 
 for _sig in (signal.SIGINT, signal.SIGTERM):
