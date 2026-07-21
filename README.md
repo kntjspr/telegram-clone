@@ -5,10 +5,12 @@
 
 A tool to clone Telegram channels, tracking cloned messages, files and media and providing a web interface.
 
-![Web Interface](assets/dashboard.png)
+![Web Interface](assets/screenshot.png)
 
 
 ## Installation
+
+`uv` installation docs: https://docs.astral.sh/uv/getting-started/installation/
 
 Using `uv`:
 ```bash
