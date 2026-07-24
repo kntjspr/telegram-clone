@@ -8,7 +8,31 @@ A tool to clone Telegram channels, tracking cloned messages, files and media and
 ![Web Interface](assets/screenshot.png)
 
 
-## Installation
+## Windows Quickstart
+
+No git, no python, no setup -- just paste this into PowerShell and follow the prompts.
+
+**Step 1** -- allow script execution (one-time, safe to run):
+
+```powershell
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+```
+
+**Step 2** -- download and run the installer:
+
+```powershell
+irm https://raw.githubusercontent.com/kntjspr/telegram-clone/main/install.ps1 | iex
+```
+
+The script will:
+- install git if missing (via winget or direct download)
+- install python 3.12+ and uv if missing
+- clone this repo to `~/telegram-clone`
+- walk you through filling in your `.env` (API keys, channels, etc.)
+- install all dependencies and launch the web interface at `http://localhost:5000`
+
+
+## Manual Installation
 
 `uv` installation docs: https://docs.astral.sh/uv/getting-started/installation/
 
